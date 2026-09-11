@@ -2044,6 +2044,8 @@ class Aplicacion(ttk.Window):
                 self.fig.tight_layout()
                 self.draw_fig()
                 self.compensation_alphaE=1 
+
+
             except Exception as e:
                 messagebox.showerror("error",f"compensation error {e}")
             

@@ -1839,38 +1839,49 @@ class ActivationEnergy:
         """
         Function to compute the pre-exponential factor based on the compensation effect
         which states a linear relation between E and ln(A): ln(A) = a + bE.
-        May raise give unreliable results.
-        Parameters:   E  : numpy array containing the values of activation energy.
-                      B  : float. Value of the heating rate for the dataframe index.
-                      f_alpha  : List of extra functions of models to iterate over.
-                                 By default the function will only iterate over all the functions
-                                 on the "rxn_models.py" file
-        Returns:      ln_A: numpy array containing the values of the logaritmic preexponential factor
-                      a  : the slope of the relationship between E and A
-                      b  : the intercept of the relationship between E and A
-                      Afit: the fitted values of the preexponential factor
-                      Efit: the fitted values of the activation energy
+
+        Args:
+            col (int): Column index associated to an experimental heating rate.
+            E (list[float]): Numpy array containing the values of activation energy.
+            errorE (list[float]): Numpy array containing the errors associated to E.
+            f_alpha (callable): User defined reaction model f(alpha).
+            error_m (str): Filtering method to consider a model fit as acceptable. Options are: 'mse_NL' for a mean
+                           squared error of a Non-Linear fit, 'r_NL' for the Pearson coefficient of a Non-Linear fit or
+                           'r_Lin' for the Pearson coefficient of a Linear fit.
+
+        Returns:
+            tuple[Any]:
+                tuple[0]:  ln_A(list[float]):  Numpy array containing the values of the logarithmic pre-exponential factor.
+                tuple[1]:  error_ln_A(list[float]):  Numpy array containing the errors associated to the logarithmic
+                                                     pre-exponential factor.
+                tuple[2]:  a(float):  The slope of the compensation effect between E and ln_A.
+                tuple[3]:  errora(float)  Error associated to a.
+                tuple[4]:  b(float):  The intercept of the compensation effect between E and ln_A.
+                tuple[5]:  errorb(float):  Error associated to b.
+                tuple[6]:  Afit(list[float]):  Array of pre-exponential values obtained from fitting experimental data
+                                               to reaction models.
+                tuple[7]:  Efit(list[float]):  Array of activation energy values obtained from fitting experimental data
+                                               to reaction models.
+                tuple[8]:  r_sq(list[float]):  Array of filter values of the accepted fits.
+                tuple[9]:  mod(lis[Any]):  Array of ccepted models.
         """
         Tdf = self.TempAdvIsoDF
         Ddf = self.diffAdvIsoDF
         x = Tdf[Tdf.columns[col]].values
         y = Ddf[Ddf.columns[col]].values
         alpha = Tdf.index.values
-        
-       
-    
         def fit(x, y, f_alpha, alpha, er_m=error_m):
 
             def filter_fit(funcs=f_alpha, rsq_l=0.95, rsq_u=1.05, mse_lim=0.1):
 
-                def g(xaux, A, E):
-                    return A * np.exp(-E / (self.R * xaux)) * f(alpha)
+                def g(xaux, A, e):
+                    return A * np.exp(-e / (self.R * xaux)) * func(alpha)
 
                 Afit = []
                 Efit = []
                 r_sqr = []
                 model = []
-                for f in funcs:
+                for func in funcs:
                     try:
                         # noinspection PyTupleAssignmentBalance
                         popt, pcov = curve_fit(g, x, y)
@@ -1881,11 +1892,11 @@ class ActivationEnergy:
                     ss_tot = np.sum((y - np.mean(y)) ** 2)
                     r_squared = 1 - (ss_res / ss_tot)
                     if er_m == 'r_NL':
-                        if r_squared > rsq_l and r_squared < rsq_u and popt[0] > 0:
+                        if rsq_l < r_squared < rsq_u and popt[0] > 0:
                             r_sqr += [r_squared]
                             Afit += [popt[0]]
                             Efit += [popt[1]]
-                            model += [f]
+                            model += [func]
                         else:
                             pass
                     elif er_m == 'mse_NL':
@@ -1893,11 +1904,11 @@ class ActivationEnergy:
                             r_sqr += [ss_res]
                             Afit += [popt[0]]
                             Efit += [popt[1]]
-                            model += [f]
+                            model += [func]
                         else:
                             pass
                     elif er_m == 'r_Lin':
-                        dep = np.log((1 / f(alpha)) * y)
+                        dep = np.log((1 / func(alpha)) * y)
                         ind = 1 / x
                         df = pd.DataFrame({'x': ind,
                                            'y': dep})
@@ -1905,16 +1916,16 @@ class ActivationEnergy:
                         df = df.dropna()
                         lr = linregress(df['x'].values, df['y'].values)
                         pen = lr.slope
-                        ord = lr.intercept
+                        intercept = lr.intercept
                         # print( lr.rvalue**2 )
                         if (lr.rvalue ** 2) > rsq_l:
-                            Afit += [np.exp(ord)]
+                            Afit += [np.exp(intercept)]
                             Efit += [-self.R * pen]
-                            model += [f]
+                            model += [func]
                             r_sqr += [lr.rvalue ** 2]
                         else:
                             pass
-                         
+
                 return np.array(Afit), np.array(Efit), np.array(r_sqr), model
 
             fr_l  = np.array([0.9999, 0.999, 0.99, 0.95, 0.85])
@@ -1940,7 +1951,7 @@ class ActivationEnergy:
                                 rf'Accuracy not met with precision of mse = {f_mse[k - 1]}. Lowering precision to mse = {f_mse[k]}')
                 else:
                     break
-           
+
             return Afit_t, Efit_t, r_sq_t, mod_t
 
         def regression(E, A):
@@ -1966,8 +1977,19 @@ class ActivationEnergy:
         f_a += filter(callable, list(rxn_models.__dict__.values()))
         Afit, Efit, r_sq, mod = fit(x, y, f_a, alpha, er_m=error_m)
         self.accepted_models = mod
-        
-       
+        print("\n==============================")
+        print("MODELOS EVALUADOS:", len(f_a))
+
+        for f in f_a:
+            print("EVALUADO:", f.__name__)
+
+        print("\nMODELOS ACEPTADOS:", len(mod))
+
+        for f in mod:
+            print("ACEPTADO:", f.__name__)
+
+        print("==============================")
+
         if Efit.size == 0 or Afit.size == 0:
             print('Compensation effect could not be computed for this data.')
             return None
@@ -1975,7 +1997,7 @@ class ActivationEnergy:
             a, errora, b, errorb = regression(Efit, Afit)
             ln_A = (a * E) + b
             errorlnA = np.sqrt((errora ** 2) + ((E * errorb) ** 2) + ((b * errorE) ** 2))
-           
+
             return ln_A, errorlnA, a, errora, b, errorb, np.array(Afit), np.array(Efit), r_sq, mod
 
     #---------------------------------------------------------------
